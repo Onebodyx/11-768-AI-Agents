@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Шпаргалка: архитектура каркаса агента (задание 1, часть 1)</title>
+<style>
+  :root {
+    --bg: #f6f6f3;
+    --card: #ffffff;
+    --text: #1f2328;
+    --muted: #57606a;
+    --line: #d0d7de;
+    --accent: #f59e0b;
+    --c-ctl: #475569;
+    --c-src: #7c3aed;
+    --c-internal: #94a3b8;
+    --c-req: #2563eb;
+    --c-resp: #16a34a;
+    --c-log: #6b7280;
+    --c-file: #92400e;
+    --c-call: #db2777;
+    --c-cmd: #c2410c;
+    --c-obs: #0d9488;
+    --c-inherit: #1e293b;
+    --code: "Cascadia Mono", Consolas, "Courier New", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 "Segoe UI", system-ui, sans-serif;
+  }
+  code, pre, .mono { font-family: var(--code); font-size: 0.92em; }
+  code { background: #eef1f4; padding: 0 4px; border-radius: 4px; }
+  header, section, footer { max-width: 1760px; margin: 0 auto; padding: 0 20px; }
+  header { padding-top: 22px; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  h2 { font-size: 20px; margin: 28px 0 10px; }
+  h3 { font-size: 16px; margin: 0 0 6px; }
+  .lead { color: var(--muted); max-width: 1100px; margin: 0; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+
+  /* Agent и CodeAgent */
+  .split { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  .split .card h3 { display: flex; gap: 8px; align-items: baseline; }
+  .split ul { margin: 6px 0 0; padding-left: 20px; }
+  .split li { margin: 2px 0; }
+  .tag { font-size: 12px; color: var(--muted); font-weight: normal; }
+  .no { color: #b91c1c; }
+  .card.agent { border-top: 4px solid #3b82f6; }
+  .card.code { border-top: 4px solid #22c55e; }
+  .card.inherit { border-top: 4px solid #64748b; }
+
+  /* Легенда */
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 8px; font-size: 13.5px; }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .legend svg { flex: none; }
+  .zones { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 6px; font-size: 13.5px; }
+  .sw { display: inline-block; width: 26px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; border: 1.5px solid; }
+
+  /* Основная часть */
+  .main { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(380px, 1fr); gap: 16px; align-items: start; }
+  .diagram { padding: 8px; }
+  #map { width: 100%; height: auto; display: block; }
+  .panel { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+  @media (max-width: 1300px) {
+    .main { grid-template-columns: 1fr; }
+    .panel { position: static; max-height: none; }
+    .split { grid-template-columns: 1fr; }
+  }
+
+  /* SVG */
+  .zone-label { font: 600 14px "Segoe UI", sans-serif; }
+  .frame-label { font: 600 13px "Segoe UI", sans-serif; fill: #1f2937; }
+  .frame-note { font: 12px "Segoe UI", sans-serif; fill: #4b5563; }
+  .node rect { stroke-width: 1.5; transition: stroke 0.2s, fill 0.2s; }
+  .node text { pointer-events: none; }
+  .node .t { font: 600 13px "Segoe UI", sans-serif; fill: #111827; }
+  .node .t.code { font: 600 11.5px var(--code); }
+  .node .s { font: 11px "Segoe UI", sans-serif; fill: #4b5563; }
+  .node { cursor: help; transition: opacity 0.25s; }
+  .node:hover rect { stroke: #111827; }
+  .k-actor rect { fill: #ffffff; stroke: #64748b; }
+  .k-cursor rect { fill: #faf5ff; stroke: var(--c-src); stroke-dasharray: 6 4; }
+  .k-model rect { fill: #eff6ff; stroke: #2563eb; }
+  .k-chip rect { fill: #ffffff; stroke: #9ca3af; }
+  .k-cli rect { fill: #f8fafc; stroke: #64748b; }
+  .k-file rect { fill: #fffbeb; stroke: #b45309; }
+  .k-danger rect { fill: #fef2f2; stroke: #dc2626; stroke-dasharray: 6 4; }
+  .k-danger .t { fill: #b91c1c; }
+  .k-boundary rect { fill: #fff7ed; stroke: #c2410c; stroke-width: 2.5; }
+  .k-linux rect { fill: #ffffff; stroke: #d97706; }
+  .edge { fill: none; stroke-width: 2; transition: opacity 0.25s; }
+  .hit { fill: none; stroke: transparent; stroke-width: 14; cursor: help; }
+  .elabel {
+    font: 11px "Segoe UI", sans-serif;
+    paint-order: stroke;
+    stroke: #ffffff;
+    stroke-width: 4px;
+    stroke-linejoin: round;
+    pointer-events: none;
+    transition: opacity 0.25s;
+  }
+  .t-ctl { stroke: var(--c-ctl); }       .l-ctl { fill: var(--c-ctl); }
+  .t-src { stroke: var(--c-src); stroke-dasharray: 6 4; } .l-src { fill: var(--c-src); }
+  .t-internal { stroke: var(--c-internal); } .l-internal { fill: #64748b; }
+  .t-req { stroke: var(--c-req); }       .l-req { fill: var(--c-req); }
+  .t-resp { stroke: var(--c-resp); }     .l-resp { fill: var(--c-resp); }
+  .t-log { stroke: var(--c-log); stroke-dasharray: 4 3; } .l-log { fill: var(--c-log); }
+  .t-file { stroke: var(--c-file); }     .l-file { fill: var(--c-file); }
+  .t-call { stroke: var(--c-call); }     .l-call { fill: var(--c-call); }
+  .t-cmd { stroke: var(--c-cmd); }       .l-cmd { fill: var(--c-cmd); }
+  .t-obs { stroke: var(--c-obs); }       .l-obs { fill: var(--c-obs); }
+  .t-inherit { stroke: var(--c-inherit); } .l-inherit { fill: var(--c-inherit); }
+
+  /* Режим подсветки шага */
+  #map.focus .node { opacity: 0.3; }
+  #map.focus .node.on { opacity: 1; }
+  #map.focus .edge { opacity: 0.1; }
+  #map.focus .elabel { opacity: 0.12; }
+  #map.focus .edge.on, #map.focus .elabel.on { opacity: 1; }
+  #map .node.on rect { stroke: var(--accent); stroke-width: 3.5; fill: #fff7e0; }
+  #map .node.on.bad rect { stroke: #dc2626; fill: #fee2e2; }
+  #map .edge.on { stroke-width: 3.5; stroke-dasharray: 10 6; animation: flow 0.8s linear infinite; }
+  @keyframes flow { to { stroke-dashoffset: -16; } }
+
+  /* Подсказка */
+  #tip {
+    position: fixed;
+    z-index: 10;
+    max-width: 380px;
+    background: #111827;
+    color: #f9fafb;
+    font-size: 13.5px;
+    line-height: 1.45;
+    padding: 9px 12px;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+    pointer-events: none;
+    display: none;
+  }
+  #tip b { color: #fcd34d; }
+  #tip code { background: #374151; color: #f9fafb; }
+
+  /* Проигрыватель */
+  .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+  .tabs button, .controls button {
+    font: inherit;
+    font-size: 13.5px;
+    border: 1px solid var(--line);
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 7px 10px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .tabs button.active { background: #fff7e0; border-color: var(--accent); font-weight: 600; }
+  .tabs button:hover, .controls button:hover { border-color: #6b7280; }
+  .premise { font-size: 13px; color: var(--muted); background: #f8fafc; border-left: 3px solid #cbd5e1; padding: 6px 10px; margin: 0 0 10px; }
+  .stepno { font-size: 12.5px; color: var(--muted); }
+  #stepTitle { font-size: 17px; margin: 2px 0 8px; }
+  .moves { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; font-size: 13.5px; margin: 0 0 8px; }
+  .moves dt { color: var(--muted); }
+  .moves dd { margin: 0; font-weight: 600; }
+  #stepText { font-size: 14px; }
+  #stepText p { margin: 0 0 6px; }
+  #stepText ul { margin: 2px 0 8px; padding-left: 20px; }
+  pre.ex {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin: 8px 0;
+  }
+  .exlabel { font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .state { border-top: 1px dashed var(--line); margin-top: 10px; padding-top: 8px; }
+  .state h4 { margin: 0 0 6px; font-size: 13.5px; }
+  .counters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .counter { font-size: 12.5px; border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px; background: #f8fafc; }
+  .counter b { font-family: var(--code); }
+  .counter.changed { background: #fff7e0; border-color: var(--accent); }
+  .hist { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+  .msg { border-radius: 6px; padding: 3px 8px; border-left: 4px solid; background: #f8fafc; }
+  .msg .r { font-family: var(--code); font-weight: 700; margin-right: 6px; }
+  .msg.system { border-color: #64748b; }
+  .msg.user { border-color: #7c3aed; }
+  .msg.assistant { border-color: var(--c-resp); }
+  .msg.tool { border-color: var(--c-obs); }
+  .msg.more { border-color: #cbd5e1; color: var(--muted); font-style: italic; }
+  .msg.new { background: #fff7e0; }
+  .fixed-part { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .controls { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+  .controls button.primary { background: #1f2937; color: #fff; border-color: #1f2937; }
+  .controls button:disabled { opacity: 0.4; cursor: default; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+  /* Карточки */
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 1100px) { .cards { grid-template-columns: 1fr; } }
+  .cards .card ul { margin: 4px 0 0; padding-left: 20px; }
+  .cards .card li { margin: 3px 0; }
+  .cards pre { background: #f1f5f9; padding: 8px 10px; border-radius: 6px; margin: 6px 0; font-size: 12.5px; white-space: pre-wrap; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .two h4 { margin: 4px 0; font-size: 13.5px; }
+  .ok { color: #047857; }
+  footer { color: var(--muted); font-size: 13px; padding-top: 18px; padding-bottom: 30px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Архитектура каркаса агента: кто, что и куда передаёт</h1>
+  <p class="lead">Шпаргалка к <a href="01-программирующий-агент.md">части 1</a> задания 1 (разделы 2–4 и договоры TODO 1.1–1.4). Схема показывает сущности каркаса, границу между Windows и Linux-контейнером и движение данных. Наведите указатель на любой блок или стрелку — появится пояснение. Справа — пошаговый проигрыватель: выберите сценарий и листайте шаги кнопками или стрелками клавиатуры. Здесь описаны только договоры поведения из руководства: готовых решений TODO нет.</p>
+</header>
+
+<section>
+  <h2>Agent и CodeAgent в двух словах</h2>
+  <div class="split">
+    <div class="card agent">
+      <h3><code>Agent</code> <span class="tag">base.py — общая часть любого агента</span></h3>
+      <div>Умеет:</div>
+      <ul>
+        <li>хранить активную историю сообщений;</li>
+        <li>собирать следующий запрос (<code>build_prompt()</code>);</li>
+        <li>обращаться к модели и вести журнал (<code>query_language_model()</code>);</li>
+        <li>повторять цикл «запрос → действия → наблюдения» (<code>run()</code>) и следить за пределом шагов;</li>
+        <li>загружать навыки и сохранять траекторию в <code>finally</code>.</li>
+      </ul>
+      <div style="margin-top:6px">Не знает <span class="no">(и не должен знать)</span>:</div>
+      <ul>
+        <li>какие инструменты существуют и как их исполнять;</li>
+        <li>когда предметная задача решена.</li>
+      </ul>
+    </div>
+    <div class="card code">
+      <h3><code>CodeAgent</code> <span class="tag">code_agent.py — наследник для программных задач</span></h3>
+      <div>Получает весь цикл <code>Agent</code> готовым и добавляет только своё:</div>
+      <ul>
+        <li>содержание запросов: роль агента, порядок исследования и проверки, сведения о Linux-контейнере, полную постановку задачи;</li>
+        <li>инструменты <code>execute</code> (команда в <code>/testbed</code>) и <code>send_message</code> (сообщить о завершении);</li>
+        <li>распределитель <code>execute_tool_calls()</code>: по имени вызова выбирает обработчик и возвращает наблюдение;</li>
+        <li>правило завершения: успешный <code>send_message</code> ставит <code>finished=True</code>.</li>
+      </ul>
+    </div>
+    <div class="card inherit">
+      <h3>Что такое «наследник»</h3>
+      <p style="margin:0 0 6px">Наследник — класс, созданный на основе другого класса. Он автоматически получает всё поведение родителя и дописывает или уточняет только недостающие части.</p>
+      <p style="margin:0 0 6px">Аналогия: <code>Agent</code> — общий регламент экзамена (выдать задание, выслушать ответ, записать в протокол, следить за временем). <code>CodeAgent</code> — конкретный предмет: какие действия разрешены экзаменуемому и что считается сдачей.</p>
+      <p style="margin:0">Поэтому в части 3 <code>ChessAgent</code> тоже унаследует тот же цикл <code>Agent</code>, но добавит шахматные указания и инструменты.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Как читать схему</h2>
+  <div class="zones">
+    <span><span class="sw" style="background:#eef4ff;border-color:#7aa2e3"></span>Windows — доверенная зона: PowerShell, llama.cpp, управляющий Python-код, Docker Desktop</span>
+    <span><span class="sw" style="background:#fff4e8;border-color:#e0a060"></span>Linux-контейнер Docker — недоверенная зона: здесь исполняются действия модели</span>
+    <span><span class="sw" style="background:#fff7e0;border-color:#f59e0b;border-width:3px"></span>участник текущего шага проигрывателя</span>
+  </div>
+  <div class="legend" id="legend"></div>
+</section>
+
+<section>
+  <div class="main" style="margin-top:14px">
+    <div class="card diagram">
+      <svg id="map" viewBox="0 0 1200 940" role="img" aria-label="Схема архитектуры каркаса агента"></svg>
+    </div>
+
+    <aside class="card panel" id="player">
+      <h3 style="margin-bottom:8px">Пошаговый проигрыватель</h3>
+      <div class="tabs" id="tabs"></div>
+      <p class="premise" id="premise"></p>
+      <div class="stepno" id="stepNo"></div>
+      <h4 id="stepTitle"></h4>
+      <dl class="moves">
+        <dt>Что движется</dt><dd id="stepWhat"></dd>
+        <dt>Откуда → куда</dt><dd id="stepRoute"></dd>
+      </dl>
+      <div id="stepText"></div>
+      <div id="stepExWrap"><div class="exlabel" id="stepExLabel">Учебный пример</div><pre class="ex" id="stepEx"></pre></div>
+      <div class="state">
+        <h4>Состояние агента после шага</h4>
+        <div class="counters" id="counters"></div>
+        <div class="fixed-part">Постоянная часть запроса: <code>system</code> + <code>user(task)</code>. Ниже — только активная история:</div>
+        <div class="hist" id="hist"></div>
+      </div>
+      <div class="controls">
+        <button id="prev">← Назад</button>
+        <button id="next" class="primary">Вперёд →</button>
+        <button id="all">Показать всю схему</button>
+      </div>
+      <div class="hint">Клавиши ← и → листают шаги. Подсвеченные стрелки «бегут» в направлении движения данных.</div>
+    </aside>
+  </div>
+</section>
+
+<section>
+  <h2>Памятки</h2>
+  <div class="cards">
+    <div class="card">
+      <h3>Роли сообщений</h3>
+      <ul>
+        <li><code>system</code> — постоянные правила, роль агента, сведения о среде, краткий каталог навыков. Первое сообщение.</li>
+        <li><code>user</code> — исходная задача или короткое указание продолжить.</li>
+        <li><code>assistant</code> — полный ответ модели: текст, служебные поля и список <code>tool_calls</code>.</li>
+        <li><code>tool</code> — наблюдение после исполнения одного вызова. Поле <code>tool_call_id</code> связывает его с вызовом.</li>
+      </ul>
+      <p style="margin:6px 0 0">Сообщение <code>tool</code> создаёт каркас, а не модель.</p>
+    </div>
+    <div class="card">
+      <h3>Из чего строится следующий запрос</h3>
+<pre>следующий запрос
+  = system
+  + user(task)
+  + активная история
+      assistant_1(tool_call=A)
+      tool(A)
+      assistant_2(tool_calls=[B, C])
+      tool(B)
+      tool(C)</pre>
+      <p style="margin:0"><code>build_prompt()</code> возвращает новую независимую копию и ничего не дописывает. Каждое сообщение в истории хранится один раз, в порядке появления.</p>
+    </div>
+    <div class="card">
+      <h3>Рабочая память ≠ журнал</h3>
+      <div class="two">
+        <div>
+          <h4>Активная история</h4>
+          <ul>
+            <li>нужна, чтобы продолжить диалог;</li>
+            <li>из неё строится следующий запрос;</li>
+            <li>без повторов <code>system</code> и <code>user(task)</code>.</li>
+          </ul>
+        </div>
+        <div>
+          <h4>Журналы</h4>
+          <ul>
+            <li><code>api_prompts</code> — снимки отправленных запросов;</li>
+            <li><code>api_responses</code> — полные ответы API;</li>
+            <li>нужны для разбора, в запрос не входят.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Предел шагов <code>step_limit</code></h3>
+      <p style="margin:0 0 4px">Один шаг — один успешный ответ модели. Счётчик <code>steps_taken</code> растёт внутри <code>query_language_model()</code>.</p>
+      <ul>
+        <li><code>0</code> — модель не вызывается ни разу, сразу <code>StepLimitError</code>;</li>
+        <li><code>1</code> — ровно один запрос; его вызовы исполняются полностью;</li>
+        <li><code>N</code> — N-й ответ исполняется полностью, запрос N+1 отклоняется до обращения к API.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Наблюдение или остановка?</h3>
+      <div class="two">
+        <div>
+          <h4 class="ok">Становится наблюдением <code>tool</code></h4>
+          <ul>
+            <li>повреждённый JSON в <code>arguments</code>;</li>
+            <li>не объект, лишнее или пропущенное поле, неверный тип;</li>
+            <li>неизвестный инструмент или навык;</li>
+            <li>вызов после <code>finished=True</code>;</li>
+            <li>ненулевой <code>returncode</code>.</li>
+          </ul>
+        </div>
+        <div>
+          <h4 class="no">Останавливает запуск</h4>
+          <ul>
+            <li>ошибка формата навыков — <code>ValueError</code> при загрузке;</li>
+            <li>исчерпан предел — <code>StepLimitError</code>;</li>
+            <li>сбой API или мёртвый контейнер.</li>
+          </ul>
+          <p style="margin:4px 0 0"><code>finally</code> выполняется в обоих случаях.</p>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Граница исполнения</h3>
+      <div class="two">
+        <div>
+          <h4>В Windows</h4>
+          <ul>
+            <li>команды пользователя в PowerShell;</li>
+            <li>llama.cpp и модель;</li>
+            <li>управляющий Python-код каркаса;</li>
+            <li>Docker Desktop.</li>
+          </ul>
+        </div>
+        <div>
+          <h4>В Linux-контейнере</h4>
+          <ul>
+            <li>все команды, предложенные моделью через <code>execute</code>;</li>
+            <li><code>/testbed</code> и изменения файлов задачи;</li>
+            <li>создание <code>patch.txt</code>.</li>
+          </ul>
+        </div>
+      </div>
+      <p style="margin:6px 0 0" class="no">Команду модели нельзя запускать в Windows — только через <code>Environment.execute()</code>.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  Основа: <a href="01-программирующий-агент.md">часть 1 руководства</a> (разделы 2, 3, 4, 8, 9, 10, 12, 14) и <a href="README.md">обзор задания 1</a>. Страница не загружает внешних файлов и работает без сети.
+</footer>
+
+<div id="tip"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  var NS = 'http://www.w3.org/2000/svg';
+  var svg = document.getElementById('map');
+
+  function el(tag, attrs, parent) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  function esc(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function rich(s) {
+    return esc(s).replace(/`([^`]+)`/g, '<code>$1</code>');
+  }
+
+  /* ---------- Типы стрелок ---------- */
+
+  var TYPES = {
+    ctl:      { color: '#475569', label: 'управление запуском' },
+    src:      { color: '#7c3aed', label: 'правка исходников (до запуска)', dash: '6 4' },
+    internal: { color: '#94a3b8', label: 'передача внутри процесса' },
+    req:      { color: '#2563eb', label: 'запрос к модели' },
+    resp:     { color: '#16a34a', label: 'ответ модели (assistant)' },
+    call:     { color: '#db2777', label: 'вызовы инструментов (tool_calls)' },
+    cmd:      { color: '#c2410c', label: 'команда в контейнер' },
+    obs:      { color: '#0d9488', label: 'результат и наблюдение tool' },
+    log:      { color: '#6b7280', label: 'запись в журнал', dash: '4 3' },
+    file:     { color: '#92400e', label: 'файлы: навыки, патч, траектория' },
+    inherit:  { color: '#1e293b', label: 'наследование класса' }
+  };
+
+  var defs = el('defs', {}, svg);
+  Object.keys(TYPES).forEach(function (t) {
+    var m = el('marker', {
+      id: 'm-' + t, viewBox: '0 0 10 10', refX: '9', refY: '5',
+      markerWidth: '7', markerHeight: '7', orient: 'auto-start-reverse'
+    }, defs);
+    if (t === 'inherit') {
+      m.setAttribute('markerWidth', '12');
+      m.setAttribute('markerHeight', '12');
+      el('path', { d: 'M1,1 L9,5 L1,9 Z', fill: '#ffffff', stroke: TYPES[t].color, 'stroke-width': '1.2' }, m);
+    } else {
+      el('path', { d: 'M0,0 L10,5 L0,10 Z', fill: TYPES[t].color }, m);
+    }
+  });
+
+  /* Легенда */
+  var legend = document.getElementById('legend');
+  Object.keys(TYPES).forEach(function (t) {
+    var span = document.createElement('span');
+    var ls = document.createElementNS(NS, 'svg');
+    ls.setAttribute('width', '44'); ls.setAttribute('height', '12');
+    var line = el('line', { x1: '2', y1: '6', x2: '36', y2: '6', stroke: TYPES[t].color, 'stroke-width': '2.5' }, ls);
+    if (TYPES[t].dash) line.setAttribute('stroke-dasharray', TYPES[t].dash);
+    var tri = t === 'inherit'
+      ? el('path', { d: 'M34,1 L43,6 L34,11 Z', fill: '#fff', stroke: TYPES[t].color, 'stroke-width': '1.3' }, ls)
+      : el('path', { d: 'M34,1 L43,6 L34,11 Z', fill: TYPES[t].color }, ls);
+    span.appendChild(ls);
+    span.appendChild(document.createTextNode(TYPES[t].label));
+    legend.appendChild(span);
+  });
+
+  /* ---------- Зоны и рамки ---------- */
+
+  function frame(x, y, w, h, fill, stroke, dash, rx) {
+    return el('rect', { x: x, y: y, width: w, height: h, rx: rx || 12, fill: fill, stroke: stroke, 'stroke-width': 1.6, 'stroke-dasharray': dash || 'none' }, svg);
+  }
+  function text(x, y, s, cls, attrs) {
+    var t = el('text', Object.assign({ x: x, y: y, class: cls }, attrs || {}), svg);
+    t.textContent = s;
+    return t;
+  }
+
+  frame(10, 10, 860, 920, '#eef4ff', '#7aa2e3');
+  text(26, 32, 'Windows — доверенная зона', 'zone-label', { fill: '#1d4ed8' });
+  frame(890, 10, 300, 920, '#fff4e8', '#e0a060');
+  text(906, 32, 'Linux-контейнер Docker — недоверенная зона', 'zone-label', { fill: '#b45309' });
+  text(1040, 300, 'Здесь исполняется всё,', 'frame-note', { 'text-anchor': 'middle' });
+  text(1040, 316, 'что предложила модель', 'frame-note', { 'text-anchor': 'middle' });
+  text(1040, 332, 'через execute', 'frame-note', { 'text-anchor': 'middle' });
+
+  frame(30, 170, 565, 715, '#ffffff', '#9bb3d9', '5 4');
+  text(165, 190, 'Процесс каркаса (Python, Windows)', 'frame-note', { 'font-weight': '600' });
+
+  var boxAgent = frame(45, 270, 535, 345, '#f3f7ff', '#3b82f6');
+  text(60, 292, 'Agent — общая часть (base.py)', 'frame-label');
+  var boxCode = frame(45, 655, 535, 215, '#f2fbf3', '#22c55e');
+  text(60, 677, 'CodeAgent — наследник Agent (code_agent.py)', 'frame-label');
+
+  /* ---------- Блоки ---------- */
+
+  var NODES = [
+    { id: 'n_user', x: 30, y: 50, w: 240, h: 70, k: 'actor', t: 'Пользователь', s: ['Windows PowerShell:', 'запуск и проверки'],
+      tip: '<b>Пользователь</b> руководит опытом: даёт узкие поручения агенту Cursor, запускает команды в PowerShell, проверяет изменённые файлы, журналы и результаты. Код вручную не пишет и не принимает фразу «готово» как доказательство.' },
+    { id: 'n_cursor', x: 290, y: 50, w: 190, h: 70, k: 'cursor', t: 'Агент Cursor', s: ['программирующий агент;', 'в цикле не участвует'],
+      tip: '<b>Программирующий агент Cursor</b> читает и изменяет исходники каркаса (<code>base.py</code>, <code>code_agent.py</code>) в рабочей копии Windows. Он строит каркас, но во время запуска не участвует: цикл ведут <code>Agent</code> и местная модель.' },
+    { id: 'n_qwen', x: 610, y: 40, w: 240, h: 110, k: 'model', t: 'llama.cpp · Qwen3.6-27B', s: ['127.0.0.1:8080/v1', 'предлагает действия,', 'но не исполняет их'],
+      tip: '<b>Местная языковая модель</b> в llama.cpp, запущенном непосредственно в Windows. Получает сообщения и описания инструментов, возвращает <code>assistant</code> с текстом и, возможно, <code>tool_calls</code>. Сама не выполняет команды и не меняет файлы.' },
+    { id: 'n_cli', x: 45, y: 200, w: 355, h: 46, k: 'cli', t: 'Командный интерфейс', s: ['assignment-code-agent: задача → среда → агент → run()'],
+      tip: '<b>Командный интерфейс</b> <code>assignment-code-agent</code> загружает задачу, создаёт новый контейнер с чистым <code>/testbed</code>, создаёт <code>CodeAgent</code> и вызывает <code>run()</code>. После завершения читает <code>patch.txt</code>, записывает патч и траекторию в <code>artifacts/</code> и закрывает контейнер.' },
+
+    { id: 'c_run', x: 60, y: 305, w: 340, h: 44, k: 'chip', code: true, t: 'run()', s: ['общий цикл ReAct: повторять до finished или предела'],
+      tip: '<code>run()</code> — общий повторяющийся цикл: проверить <code>finished</code> и предел шагов, получить <code>assistant</code>, сохранить его, передать <code>tool_calls</code> предметному исполнителю, сохранить наблюдения и решить, нужен ли следующий шаг.' },
+    { id: 'c_sys', x: 60, y: 365, w: 160, h: 44, k: 'chip', code: true, t: 'system_prompt', s: ['постоянные указания'],
+      tip: '<code>system_prompt</code> — хранимое значение: роль агента, правила работы, сведения о Linux-среде и краткий каталог навыков. Содержание задаёт <code>CodeAgent</code>, в запрос оно попадает первым сообщением <code>system</code>.' },
+    { id: 'c_build', x: 240, y: 365, w: 160, h: 44, k: 'chip', code: true, t: 'build_prompt()', s: ['собирает запрос'],
+      tip: '<code>build_prompt()</code> ничего не отправляет и ничего не дописывает. Возвращает новую независимую (глубокую) копию: <code>system</code> + <code>user(task)</code> + активная история.' },
+    { id: 'c_query', x: 420, y: 365, w: 150, h: 44, k: 'chip', code: true, t: 'query_language_model()', s: ['одно обращение к API'],
+      tip: '<code>query_language_model()</code> — одно обращение к модели: вызывает <code>build_prompt()</code>, сохраняет снимок запроса, обращается к API, сохраняет полный ответ, увеличивает <code>steps_taken</code> и возвращает нормализованный <code>assistant</code>.' },
+    { id: 'c_task', x: 60, y: 425, w: 160, h: 44, k: 'chip', code: true, t: 'task_prompt', s: ['полная задача'],
+      tip: '<code>task_prompt</code> — полная исходная постановка текущего запуска без сокращения. В запросе это сообщение <code>user</code> сразу после <code>system</code>.' },
+    { id: 'c_hist', x: 240, y: 425, w: 160, h: 44, k: 'chip', t: 'активная история', s: ['рабочая память'],
+      tip: '<b>Активная история</b> — рабочая память агента: ответы <code>assistant</code>, наблюдения <code>tool</code> и короткие <code>user</code>-указания продолжить. Каждое сообщение хранится один раз и в порядке появления.' },
+    { id: 'c_proc', x: 420, y: 425, w: 150, h: 44, k: 'chip', code: true, t: 'process_response()', s: ['достаёт assistant'],
+      tip: '<code>process_response()</code> извлекает обычное сообщение <code>assistant</code> из полного служебного ответа API. Сам ничего не добавляет в историю.' },
+    { id: 'c_steps', x: 60, y: 495, w: 160, h: 44, k: 'chip', code: true, t: 'steps_taken', s: ['число ответов модели'],
+      tip: '<code>steps_taken</code> — число успешно полученных ответов модели. Увеличивается внутри <code>query_language_model()</code>; в <code>run()</code> второй раз не увеличивается.' },
+    { id: 'c_fin', x: 240, y: 495, w: 160, h: 44, k: 'chip', code: true, t: 'finished', s: ['задача завершена?'],
+      tip: '<code>finished</code> — признак завершения предметной задачи. Общий цикл только читает его, а устанавливает предметный обработчик: у <code>CodeAgent</code> — успешный <code>send_message</code>. Обычный текст модели задачу не завершает.' },
+    { id: 'c_log', x: 420, y: 489, w: 150, h: 56, k: 'chip', code: true, heads: 2, t: 'api_prompts', s: ['api_responses', 'журналы'],
+      tip: '<b>Журналы</b>: <code>api_prompts</code> — снимки уже отправленных запросов, <code>api_responses</code> — полные ответы API. Нужны для разбора траектории; для построения следующего запроса не используются.' },
+    { id: 'c_final', x: 60, y: 555, w: 340, h: 44, k: 'chip', code: true, t: 'finally', s: ['сохранить траекторию, stop(); блок не менять'],
+      tip: 'Предоставленный блок <code>finally</code> сохраняет траекторию и при успехе, и при ошибке, а также вызывает <code>stop()</code>, если каркас владеет средой. Изменять его нельзя.' },
+    { id: 'c_load', x: 420, y: 555, w: 150, h: 44, k: 'chip', code: true, t: 'load_skills()', s: ['каталог навыков'],
+      tip: '<code>load_skills()</code> для каждого навыка хранит <code>metadata</code> (краткие <code>name</code> и <code>description</code> для каталога) и <code>content</code> (полный <code>SKILL.md</code> для раскрытия). Ошибки формата — понятный <code>ValueError</code>.' },
+
+    { id: 'c_cprompts', x: 60, y: 690, w: 250, h: 44, k: 'chip', t: 'содержание запросов', s: ['для system_prompt и task_prompt'],
+      tip: '<code>CodeAgent</code> задаёт <b>содержание запросов</b>: роль агента для программных задач, порядок исследования и проверки, блок <code>&lt;system_information&gt;</code> со сведениями о Linux-контейнере и полную постановку задачи.' },
+    { id: 'c_tools', x: 320, y: 690, w: 250, h: 44, k: 'chip', code: true, t: 'tools', s: ['invoke_skill + execute + send_message'],
+      tip: '<b>Список инструментов</b>, описания которых получает модель. <code>CodeAgent</code> добавляет <code>execute</code> и <code>send_message</code> к уже зарегистрированному <code>invoke_skill</code>, а не заменяет список. Без навыков <code>invoke_skill</code> нет.' },
+    { id: 'c_exec', x: 60, y: 750, w: 510, h: 44, k: 'chip', code: true, t: 'execute_tool_calls()', s: ['распределитель: проверить каждый вызов, вернуть по одному tool на вызов'],
+      tip: '<code>execute_tool_calls()</code> — предметный распределитель. Получает весь список вызовов одного <code>assistant</code> и возвращает ровно одно сообщение <code>tool</code> на каждый вызов с исходным <code>tool_call_id</code>. Каждый вызов проверяется и обрабатывается независимо.' },
+    { id: 'c_send', x: 60, y: 810, w: 160, h: 44, k: 'chip', code: true, t: 'send_message', s: ['finished = True'],
+      tip: '<code>send_message</code> принимает ровно строковый <code>summary</code>, устанавливает <code>finished=True</code> и возвращает подтверждение. Патч он не создаёт и не проверяет.' },
+    { id: 'c_invoke', x: 240, y: 810, w: 160, h: 44, k: 'chip', code: true, t: 'invoke_skill', s: ['полный текст навыка'],
+      tip: '<code>invoke_skill</code> возвращает полный <code>content</code> выбранного навыка как наблюдение <code>tool</code>. Неизвестное имя — исправимое наблюдение об ошибке.' },
+    { id: 'c_fmt', x: 420, y: 810, w: 150, h: 44, k: 'chip', code: true, t: 'format_tool_output()', s: ['результат → строка'],
+      tip: '<code>format_tool_output()</code> переводит результат <code>execute</code> в строку с полями <code>exception_info</code>, <code>output</code>, <code>returncode</code> и сокращает слишком длинный вывод, сохраняя начало и конец.' },
+
+    { id: 'n_forbid', x: 610, y: 380, w: 240, h: 140, k: 'danger', t: 'Запрещено', s: ['исполнять команды модели', 'непосредственно в Windows', '(локальный subprocess).', 'Единственный путь —', 'Environment.execute()'],
+      tip: 'Порождённую моделью команду <b>никогда</b> не запускают непосредственно в Windows, например через локальный <code>subprocess</code>: недоверенный код получил бы доступ к компьютеру пользователя.' },
+    { id: 'n_skillfile', x: 610, y: 555, w: 240, h: 44, k: 'file', code: true, t: 'tasks/code-skills/*/SKILL.md', s: ['навыки: читаются при создании агента'],
+      tip: '<b>Каталог навыков</b>. Каждый непосредственный дочерний каталог содержит один <code>SKILL.md</code> с YAML-заголовком <code>name</code> и <code>description</code>. Вложенные уровни не обходятся.' },
+    { id: 'n_art', x: 610, y: 610, w: 240, h: 56, k: 'file', code: true, t: 'artifacts/', s: ['траектория .json', 'патч .patch'],
+      tip: '<b>Артефакты на Windows</b>: траектория (снимки запросов, ответы, сведения о сжатиях) и патч, скопированный из <code>/testbed/patch.txt</code>. Номер попытки входит в имя, чтобы не перезаписать прошлые.' },
+    { id: 'n_env', x: 610, y: 735, w: 240, h: 90, k: 'boundary', code: true, t: 'Environment.execute()', s: ['единственная граница', 'исполнения команд агента'],
+      tip: '<code>Environment</code> — единственная разрешённая граница выполнения команд создаваемого агента. <code>execute()</code> отправляет команду во временный Linux-контейнер и возвращает <code>output</code>, <code>returncode</code> и <code>exception_info</code>.' },
+
+    { id: 'l_create', x: 910, y: 60, w: 260, h: 110, k: 'linux', t: 'Временный контейнер', s: ['создаётся из образа задачи', 'при запуске;', 'рабочий каталог — /testbed'],
+      tip: '<b>Временный контейнер</b> — отдельный запущенный экземпляр заранее собранного образа Linux. Для каждого запуска создаётся новый, с чистым <code>/testbed</code>.' },
+    { id: 'l_patch', x: 910, y: 470, w: 260, h: 56, k: 'linux', code: true, t: '/testbed/patch.txt', s: ['патч, подготовленный моделью'],
+      tip: '<code>patch.txt</code> модель создаёт внутри контейнера по протоколу навыка. Только после этого командный интерфейс может скопировать его в Windows.' },
+    { id: 'l_testbed', x: 910, y: 590, w: 260, h: 80, k: 'linux', code: true, t: '/testbed', s: ['файлы задачи; изменения', 'живут до удаления контейнера'],
+      tip: '<code>/testbed</code> — рабочий каталог агента внутри контейнера. Изменённые файлы сохраняются между вызовами до удаления самого контейнера.' },
+    { id: 'l_shell', x: 910, y: 735, w: 260, h: 90, k: 'linux', t: 'Подоболочка Linux', s: ['новая на каждый вызов execute;', 'cd и export не сохраняются'],
+      tip: 'Каждый вызов <code>execute</code> работает в <b>новой подоболочке</b> Linux: <code>cd</code> и <code>export</code> не переносятся на следующий вызов. Для этого есть аргументы <code>cwd</code> и <code>env</code>.' },
+    { id: 'l_rm', x: 910, y: 845, w: 260, h: 60, k: 'linux', t: 'Удаление контейнера', s: ['finally/with → stop(); страховка --rm'],
+      tip: 'Штатно контейнер немедленно удаляется, когда выполнение доходит до <code>finally</code> или выхода из блока <code>with</code>. При аварийном обрыве управляющего процесса страхует <code>--rm</code>: удаление после <code>deployment_timeout</code>, если Docker доступен.' }
+  ];
+
+  /* ---------- Стрелки ---------- */
+
+  var EDGES = [
+    { id: 'e_user', d: 'M150,120 V200', t: 'ctl', lab: [160, 166, 'uv run …'],
+      tip: 'Пользователь запускает командный интерфейс из PowerShell.' },
+    { id: 'e_cursor', d: 'M385,120 V170', t: 'src', lab: [377, 150, 'правит исходники до запуска', 'end'],
+      tip: 'Агент Cursor меняет <code>base.py</code> и <code>code_agent.py</code>. Это происходит до запуска, а не во время цикла.' },
+    { id: 'e_sys_build', d: 'M220,387 H240', t: 'internal', tip: '<code>system_prompt</code> становится первым сообщением запроса.' },
+    { id: 'e_task_build', d: 'M220,447 H230 V399 H240', t: 'internal', tip: '<code>task_prompt</code> становится сообщением <code>user(task)</code>.' },
+    { id: 'e_hist_build', d: 'M320,425 V409', t: 'internal', tip: 'Активная история добавляется после постоянной части в исходном порядке.' },
+    { id: 'e_build_query', d: 'M400,387 H420', t: 'internal', tip: 'Готовый список сообщений передаётся на отправку.' },
+    { id: 'e_req', d: 'M530,365 V95 H610', t: 'req', lab: [572, 88, 'запрос', 'middle'],
+      tip: 'Запрос к API: список сообщений и описания разрешённых инструментов.' },
+    { id: 'e_resp', d: 'M610,135 H470 V365', t: 'resp', lab: [575, 129, 'ответ', 'middle'],
+      tip: 'Ответ модели: сообщение <code>assistant</code> с текстом и, возможно, <code>tool_calls</code>.' },
+    { id: 'e_query_proc', d: 'M495,409 V425', t: 'internal', tip: 'Полный служебный ответ передаётся в <code>process_response()</code>.' },
+    { id: 'e_proc_hist', d: 'M420,447 H400', t: 'resp', tip: '<code>run()</code> сохраняет <code>assistant</code> целиком в активной истории.' },
+    { id: 'e_log', d: 'M570,387 H588 V517 H570', t: 'log', lab: [592, 452, 'журнал', 'middle', -90],
+      tip: 'Снимок запроса записывается в <code>api_prompts</code>, полный ответ — в <code>api_responses</code>.' },
+    { id: 'e_skill_file', d: 'M610,577 H570', t: 'file', tip: '<code>load_skills()</code> читает <code>SKILL.md</code> при создании агента.' },
+    { id: 'e_final_art', d: 'M220,599 V635 H610', t: 'file', lab: [420, 630, 'траектория из finally', 'middle'],
+      tip: '<code>finally</code> записывает траекторию в <code>artifacts/</code>.' },
+    { id: 'e_calls', d: 'M60,327 H38 V785 H60', t: 'call', lab: [35, 560, 'tool_calls', 'middle', -90],
+      tip: '<code>run()</code> передаёт весь список <code>tool_calls</code> распределителю <code>execute_tool_calls()</code>.' },
+    { id: 'e_obs', d: 'M60,760 H50 V482 H320 V469', t: 'obs', lab: [150, 479, 'сообщения tool', 'middle'],
+      tip: 'Распределитель возвращает по одному сообщению <code>tool</code> на каждый вызов; <code>run()</code> добавляет их в историю в порядке вызовов.' },
+    { id: 'e_exec_env', d: 'M570,765 H610', t: 'cmd', tip: 'Только проверенные аргументы <code>execute</code> передаются в <code>Environment.execute()</code>.' },
+    { id: 'e_env_exec', d: 'M610,785 H570', t: 'obs', tip: 'Результат команды: <code>output</code>, <code>returncode</code>, <code>exception_info</code>.' },
+    { id: 'e_exec_send', d: 'M140,794 V810', t: 'internal', tip: 'Распределитель вызывает обработчик <code>send_message</code>.' },
+    { id: 'e_exec_skill', d: 'M320,794 V810', t: 'internal', tip: 'Распределитель вызывает обработчик <code>invoke_skill</code>.' },
+    { id: 'e_exec_fmt', d: 'M495,794 V810', t: 'internal', tip: 'Результат <code>execute</code> превращается в строку наблюдения.' },
+    { id: 'e_inherit', d: 'M150,655 V617', t: 'inherit', lab: [160, 641, 'наследует', 'start'],
+      tip: '<code>CodeAgent</code> наследует <code>Agent</code>: получает общий цикл готовым и добавляет предметные части.' },
+    { id: 'e_env_sh', d: 'M850,765 H910', t: 'cmd', lab: [880, 758, 'команда', 'middle'],
+      tip: 'Команда уходит в Linux-контейнер и исполняется в новой подоболочке.' },
+    { id: 'e_sh_env', d: 'M910,795 H850', t: 'obs', lab: [880, 812, 'результат', 'middle'],
+      tip: 'Код выхода, вывод и сведения об исключении возвращаются в Windows.' },
+    { id: 'e_sh_tb', d: 'M1040,735 V672', t: 'cmd', both: true, lab: [1048, 707, 'читает и меняет файлы', 'start'],
+      tip: 'Команды читают и меняют файлы задачи в <code>/testbed</code>.' },
+    { id: 'e_tb_patch', d: 'M1040,590 V528', t: 'file', lab: [1048, 563, 'создаётся моделью', 'start'],
+      tip: 'По протоколу навыка модель через <code>execute</code> создаёт <code>/testbed/patch.txt</code>.' },
+    { id: 'e_patch_art', d: 'M910,498 H880 V645 H850', t: 'file', lab: [875, 575, 'копия патча', 'middle', -90],
+      tip: 'Командный интерфейс читает <code>patch.txt</code> из контейнера и записывает патч в <code>artifacts/</code>.' },
+    { id: 'e_env_rm', d: 'M850,815 H875 V875 H910', t: 'ctl', lab: [893, 868, 'stop()', 'middle'],
+      tip: 'Остановка и удаление контейнера.' }
+  ];
+
+  /* ---------- Отрисовка ---------- */
+
+  var nodeEls = {}, edgeEls = {}, labelEls = {};
+  var tip = document.getElementById('tip');
+
+  function showTip(html, ev) {
+    tip.innerHTML = html;
+    tip.style.display = 'block';
+    moveTip(ev);
+  }
+  function moveTip(ev) {
+    var pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+    var x = ev.clientX + pad, y = ev.clientY + pad;
+    if (x + w > window.innerWidth - 8) x = ev.clientX - w - pad;
+    if (y + h > window.innerHeight - 8) y = ev.clientY - h - pad;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  }
+  function hideTip() { tip.style.display = 'none'; }
+  function bindTip(target, html) {
+    target.addEventListener('mouseenter', function (ev) { showTip(html, ev); });
+    target.addEventListener('mousemove', moveTip);
+    target.addEventListener('mouseleave', hideTip);
+  }
+
+  bindTip(boxAgent, '<b>Agent</b> — общая часть любого агента: хранит историю, собирает запрос, обращается к модели и повторяет цикл до завершения или предела шагов. Какие действия существуют и когда задача решена, не знает.');
+  bindTip(boxCode, '<b>CodeAgent</b> — наследник <code>Agent</code> для программных задач: добавляет содержание запросов, инструменты <code>execute</code> и <code>send_message</code>, распределитель вызовов и правило завершения.');
+
+  EDGES.forEach(function (e) {
+    var p = el('path', { d: e.d, class: 'edge t-' + e.t, 'marker-end': 'url(#m-' + e.t + ')' }, svg);
+    if (e.both) p.setAttribute('marker-start', 'url(#m-' + e.t + ')');
+    edgeEls[e.id] = p;
+    var hit = el('path', { d: e.d, class: 'hit' }, svg);
+    bindTip(hit, e.tip);
+    if (e.lab) {
+      var a = { 'text-anchor': e.lab[3] || 'middle', class: 'elabel l-' + e.t };
+      if (e.lab[4]) a.transform = 'rotate(' + e.lab[4] + ' ' + e.lab[0] + ' ' + e.lab[1] + ')';
+      labelEls[e.id] = text(e.lab[0], e.lab[1], e.lab[2], 'elabel l-' + e.t, a);
+    }
+  });
+
+  NODES.forEach(function (n) {
+    var g = el('g', { class: 'node k-' + n.k, tabindex: '0' }, svg);
+    el('rect', { x: n.x, y: n.y, width: n.w, height: n.h, rx: n.k === 'chip' ? 7 : 10 }, g);
+    var lines = [n.t].concat(n.s || []);
+    var total = 15 + 13 * (lines.length - 1);
+    var y0 = n.y + n.h / 2 - total / 2 + 11;
+    lines.forEach(function (s, i) {
+      var t = el('text', {
+        x: n.x + n.w / 2,
+        y: i === 0 ? y0 : y0 + 15 + 13 * (i - 1) + 1,
+        'text-anchor': 'middle',
+        class: i < (n.heads || 1) ? ('t' + (n.code ? ' code' : '')) : 's'
+      }, g);
+      t.textContent = s;
+    });
+    bindTip(g, n.tip);
+    nodeEls[n.id] = g;
+  });
+
+  /* ---------- Сценарии ---------- */
+
+  var SCENARIOS = [
+    {
+      name: 'А. Один оборот с execute',
+      premise: 'Задача только что запущена с пределом step_limit = 200. Навыки есть, но в этом обороте не используются.',
+      steps: [
+        { t: 'Подготовка запуска',
+          what: 'постановка задачи и настройки',
+          route: 'PowerShell → командный интерфейс → контейнер и CodeAgent',
+          text: 'Пользователь запускает `uv run assignment-code-agent`. Командный интерфейс загружает постановку, создаёт новый Linux-контейнер с чистым `/testbed` и объект `CodeAgent`.\nПри создании `CodeAgent` заполняет `system_prompt` (роль, порядок работы, сведения о контейнере) и `task_prompt` (полная постановка). Активная история пока пуста.',
+          ex: 'uv run assignment-code-agent --task tasks/chess-terminal-move --step-limit 200 --skills-path tasks/code-skills ...',
+          n: ['n_user', 'n_cli', 'l_create', 'c_cprompts', 'c_sys', 'c_task'], e: ['e_user'],
+          st: { h: [], p: 0, s: 0, f: false } },
+        { t: 'Проверки перед запросом',
+          what: 'ничего: цикл только читает состояние',
+          route: 'run() читает finished и steps_taken',
+          text: 'До каждого обращения к модели `run()` проверяет две вещи:\n- не завершена ли задача: `finished`;\n- не исчерпан ли предел: при `steps_taken >= step_limit` возникает `StepLimitError`, и API не вызывается.\nСейчас `finished=False` и 0 < 200 — запрос разрешён.',
+          ex: 'finished = False                     → продолжаем\nsteps_taken = 0 < step_limit = 200   → запрос разрешён',
+          n: ['c_run', 'c_fin', 'c_steps'], e: [],
+          st: { h: [], p: 0, s: 0, f: false } },
+        { t: 'Сборка запроса',
+          what: 'копии system, user(task) и активной истории',
+          route: 'system_prompt, task_prompt, активная история → build_prompt()',
+          text: '`build_prompt()` собирает новый независимый список сообщений. Его вызывает `query_language_model()` непосредственно перед обращением к API. Сам `build_prompt()` только читает состояние: ничего не дописывает и никуда не отправляет.\nВложенные словари тоже копируются (глубокая копия), поэтому изменение результата не испортит внутреннюю историю.',
+          ex: '[\n  system:  постоянные указания + <system_information>\n  user:    полная постановка задачи\n  (активная история пока пуста)\n]',
+          n: ['c_sys', 'c_task', 'c_hist', 'c_build', 'c_query'], e: ['e_sys_build', 'e_task_build', 'e_hist_build'],
+          st: { h: [], p: 0, s: 0, f: false } },
+        { t: 'Отправка модели',
+          what: 'список сообщений и описания инструментов',
+          route: 'query_language_model() → llama.cpp; снимок → api_prompts',
+          text: '`query_language_model()` сохраняет снимок отправляемого запроса в журнал `api_prompts` и обращается к OpenAI-совместимому API по адресу `127.0.0.1:8080/v1`.\nВместе с сообщениями модель получает описания разрешённых инструментов: `invoke_skill`, `execute` и `send_message`.',
+          ex: 'адрес:     http://127.0.0.1:8080/v1\nсообщения: [system, user(task)]\nописания:  [invoke_skill, execute, send_message]',
+          n: ['c_build', 'c_query', 'c_tools', 'n_qwen', 'c_log'], e: ['e_build_query', 'e_req', 'e_log'],
+          st: { h: [], p: 1, s: 0, f: false } },
+        { t: 'Ответ модели',
+          what: 'assistant: текст и tool_calls',
+          route: 'Qwen → query_language_model()',
+          text: 'Модель ничего не выполняет — она лишь предлагает вызов в структурированном виде. Поле `arguments` приходит строкой JSON, которую каркас ещё должен проверить.',
+          ex: '{\n  "role": "assistant",\n  "content": "Сначала посмотрю, какие файлы есть в /testbed.",\n  "tool_calls": [{\n    "id": "call_1",\n    "type": "function",\n    "function": {\n      "name": "execute",\n      "arguments": "{\\"command\\": \\"ls /testbed\\"}"\n    }\n  }]\n}',
+          n: ['n_qwen', 'c_query'], e: ['e_resp'],
+          st: { h: [], p: 1, s: 0, f: false } },
+        { t: 'Журнал и счётчик шагов',
+          what: 'полный ответ API → api_responses; assistant → run()',
+          route: 'query_language_model() → process_response()',
+          text: 'Полный служебный ответ API сохраняется в `api_responses`. `process_response()` извлекает из него обычное сообщение `assistant`.\nПосле успешного ответа `steps_taken` увеличивается на 1 — внутри `query_language_model()`, а не в `run()`.',
+          ex: null,
+          n: ['c_query', 'c_proc', 'c_log', 'c_steps'], e: ['e_query_proc', 'e_log'],
+          st: { h: [], p: 1, s: 1, f: false } },
+        { t: 'assistant — в рабочую память',
+          what: 'assistant целиком, вместе с tool_calls',
+          route: 'run() → активная история',
+          text: 'Сохраняется весь ответ, а не только текст. Если потерять `tool_calls`, следующий запрос не будет знать о самом действии, и будущее наблюдение окажется «ответом ни на что».',
+          ex: null,
+          n: ['c_proc', 'c_hist', 'c_run'], e: ['e_proc_hist'],
+          st: { h: [['assistant', 'call_1 → execute("ls /testbed")', 1]], p: 1, s: 1, f: false } },
+        { t: 'Передача вызовов предметному исполнителю',
+          what: 'весь список tool_calls',
+          route: 'run() (Agent) → execute_tool_calls() (CodeAgent)',
+          text: 'Общий `Agent` не знает, что такое `execute`. Он передаёт весь список вызовов распределителю наследника и ждёт по одному сообщению `tool` на каждый вызов.',
+          ex: null,
+          n: ['c_run', 'c_exec'], e: ['e_calls'],
+          st: { h: [['assistant', 'call_1 → execute("ls /testbed")']], p: 1, s: 1, f: false } },
+        { t: 'Проверка вызова',
+          what: 'сырой arguments → проверенные аргументы',
+          route: 'внутри execute_tool_calls()',
+          text: 'Схема инструмента — договор для модели, но не гарантия. Поэтому каждый вызов проверяется отдельно:\n- сохранить исходный `id`;\n- проверить форму записи и прочитать имя функции;\n- разобрать строку `arguments` как JSON и убедиться, что это объект;\n- проверить обязательные поля, типы и отсутствие лишних полей;\n- исполнять только явно известный инструмент.\nЕсли проверка не прошла — см. сценарий «Отклонения».',
+          ex: null,
+          n: ['c_exec', 'c_tools'], e: [],
+          st: { h: [['assistant', 'call_1 → execute("ls /testbed")']], p: 1, s: 1, f: false } },
+        { t: 'Исполнение в контейнере',
+          what: 'проверенная команда',
+          route: 'execute_tool_calls() → Environment.execute() → подоболочка Linux → /testbed',
+          text: 'Команда уходит в Linux-контейнер. Рабочий каталог по умолчанию — `/testbed`. Каждый вызов работает в новой подоболочке, но изменённые файлы сохраняются до удаления контейнера.\nЗапуск той же команды в Windows (красный блок) запрещён.',
+          ex: 'команда:  ls /testbed\nгде:      Linux-контейнер Docker\nкаталог:  /testbed',
+          n: ['c_exec', 'n_env', 'l_shell', 'l_testbed', 'n_forbid'], bad: ['n_forbid'], e: ['e_exec_env', 'e_env_sh', 'e_sh_tb'],
+          st: { h: [['assistant', 'call_1 → execute("ls /testbed")']], p: 1, s: 1, f: false } },
+        { t: 'Результат превращается в строку',
+          what: 'output, returncode, exception_info',
+          route: 'подоболочка → Environment → format_tool_output()',
+          text: '`format_tool_output()` переводит структурированный результат в строку с полями и сокращает слишком длинный вывод, сохраняя начало и конец.\nНенулевой `returncode` здесь тоже был бы обычным наблюдением.',
+          ex: '<exception_info></exception_info>\n<output>…список файлов…</output>\n<returncode>0</returncode>',
+          n: ['l_shell', 'n_env', 'c_exec', 'c_fmt'], e: ['e_sh_env', 'e_env_exec', 'e_exec_fmt'],
+          st: { h: [['assistant', 'call_1 → execute("ls /testbed")']], p: 1, s: 1, f: false } },
+        { t: 'Наблюдение — в рабочую память',
+          what: 'сообщение tool с tool_call_id = call_1',
+          route: 'execute_tool_calls() → run() → активная история',
+          text: 'Распределитель возвращает ровно одно сообщение `tool` на вызов, с тем же `tool_call_id`. `run()` добавляет его в историю сразу после `assistant`. Пара `assistant → tool` — законченное действие с наблюдением.',
+          ex: '{\n  "role": "tool",\n  "tool_call_id": "call_1",\n  "content": "<exception_info></exception_info>\\n<output>…</output>\\n<returncode>0</returncode>"\n}',
+          n: ['c_exec', 'c_run', 'c_hist'], e: ['e_obs'],
+          st: { h: [['assistant', 'call_1 → execute("ls /testbed")'], ['tool', 'call_1: вывод, returncode 0', 1]], p: 1, s: 1, f: false } },
+        { t: 'Решение о следующем обороте',
+          what: 'ничего: чтение finished',
+          route: 'run() читает finished',
+          text: 'Задача не завершена: `finished=False`. Завершить `CodeAgent` может только успешный `send_message`. Цикл начинает новый оборот с проверок шага 2.',
+          ex: null,
+          n: ['c_run', 'c_fin'], e: [],
+          st: { h: [['assistant', 'call_1 → execute("ls /testbed")'], ['tool', 'call_1: вывод, returncode 0']], p: 1, s: 1, f: false } },
+        { t: 'Следующий запрос видит весь шаг',
+          what: 'system + user(task) + assistant + tool',
+          route: 'build_prompt() → query_language_model() → Qwen',
+          text: 'Новый запрос содержит законченный шаг. Журнал `api_prompts` теперь хранит два самостоятельных снимка, а рабочая история при этом не содержит повторов `system` и `user(task)`.',
+          ex: 'api_prompts[1] = [\n  system\n  user(task)\n  assistant(call_1 → execute)\n  tool(call_1)\n]',
+          n: ['c_sys', 'c_task', 'c_hist', 'c_build', 'c_query', 'n_qwen', 'c_log'], e: ['e_sys_build', 'e_task_build', 'e_hist_build', 'e_build_query', 'e_req', 'e_log'],
+          st: { h: [['assistant', 'call_1 → execute("ls /testbed")'], ['tool', 'call_1: вывод, returncode 0']], p: 2, s: 1, f: false } }
+      ]
+    },
+    {
+      name: 'Б. Раскрытие навыка',
+      premise: 'Запуск с --skills-path. Используется условный учебный навык inspect-log; настоящие навыки задания здесь не пересказываются.',
+      steps: [
+        { t: 'Загрузка навыков при создании агента',
+          what: 'файлы SKILL.md',
+          route: 'tasks/code-skills/*/SKILL.md → load_skills()',
+          text: '`load_skills()` смотрит только непосредственные дочерние каталоги `skills_path` (без рекурсии) и в каждом ожидает файл `SKILL.md`. В начале файла — YAML-заголовок между строками `---`.',
+          ex: 'toy-skills/\n  inspect-log/\n    SKILL.md\n\n---\nname: inspect-log\ndescription: Найти в учебном журнале строки с ошибками\n---\n[дальнейшие шаги навыка]',
+          n: ['n_cli', 'n_skillfile', 'c_load'], e: ['e_skill_file'],
+          st: { h: [], p: 0, s: 0, f: false } },
+        { t: 'Две формы одного навыка',
+          what: 'metadata и content',
+          route: 'внутри load_skills()',
+          text: 'Для каждого навыка хранятся две формы: краткая `metadata` (имя и описание) для каталога и полный `content` для раскрытия. Ключ — поле `name`, а не имя каталога.\nОдинаковые `name`, отсутствующий `SKILL.md` или повреждённый заголовок дают понятный `ValueError` ещё до работы модели. Это не наблюдение, а остановка запуска.',
+          ex: 'skills["inspect-log"]\n  metadata: inspect-log — Найти в учебном журнале строки с ошибками\n  content:  полный текст SKILL.md (модели пока не показан)',
+          n: ['c_load'], e: [],
+          st: { h: [], p: 0, s: 0, f: false } },
+        { t: 'Регистрация инструментов',
+          what: 'описание invoke_skill в списке tools',
+          route: 'load_skills() → tools',
+          text: 'Если навыки загружены, базовый `Agent` регистрирует `invoke_skill`. `CodeAgent` добавляет свои инструменты к списку, а не заменяет его.\nЕсли `skills_path=None`, `invoke_skill` не регистрируется, а запрос не упоминает навыки и `patch.txt`.',
+          ex: 'без навыков:   execute, send_message\nс навыками:    invoke_skill, execute, send_message',
+          n: ['c_load', 'c_tools'], e: [],
+          st: { h: [], p: 0, s: 0, f: false } },
+        { t: 'Краткий каталог в system',
+          what: 'только metadata',
+          route: 'load_skills() → system_prompt',
+          text: 'Модель узнаёт лишь, что навык существует и для чего он нужен. Полный текст не занимает контекст, пока не понадобится. Ниже — условная форма, а не готовый системный запрос.',
+          ex: 'system:\n  …роль и порядок работы…\n  Доступные навыки:\n    inspect-log — Найти в учебном журнале строки с ошибками',
+          n: ['c_load', 'c_sys', 'c_cprompts'], e: [],
+          st: { h: [], p: 0, s: 0, f: false } },
+        { t: 'Модель запрашивает навык',
+          what: 'assistant с вызовом invoke_skill',
+          route: 'build_prompt() → Qwen → query_language_model()',
+          text: 'Увидев каталог, модель решает, что навык нужен, и предлагает вызвать `invoke_skill`.',
+          ex: '{\n  "role": "assistant",\n  "tool_calls": [{\n    "id": "call_7",\n    "type": "function",\n    "function": {\n      "name": "invoke_skill",\n      "arguments": "{\\"name\\": \\"inspect-log\\"}"\n    }\n  }]\n}',
+          n: ['c_build', 'c_query', 'n_qwen', 'c_log'], e: ['e_build_query', 'e_req', 'e_resp', 'e_log'],
+          st: { h: [], p: 1, s: 1, f: false } },
+        { t: 'Вызов уходит распределителю',
+          what: 'tool_calls с invoke_skill',
+          route: 'история ← assistant; run() → execute_tool_calls() → invoke_skill',
+          text: '`assistant` сохраняется в истории, список вызовов уходит распределителю. Контейнер здесь не нужен: навык уже загружен в память агента. Проверка `arguments` та же: JSON-объект с полем `name`.',
+          ex: null,
+          n: ['c_proc', 'c_hist', 'c_run', 'c_exec', 'c_invoke'], e: ['e_query_proc', 'e_proc_hist', 'e_calls', 'e_exec_skill'],
+          st: { h: [['assistant', 'call_7 → invoke_skill("inspect-log")', 1]], p: 1, s: 1, f: false } },
+        { t: 'Полный текст — как наблюдение',
+          what: 'content навыка в сообщении tool',
+          route: 'invoke_skill → execute_tool_calls() → активная история',
+          text: 'Полный текст навыка приходит только связанным наблюдением `tool`. Неизвестное имя навыка дало бы исправимое наблюдение об ошибке.',
+          ex: '{\n  "role": "tool",\n  "tool_call_id": "call_7",\n  "content": "---\\nname: inspect-log\\n…\\n[полный текст навыка]"\n}',
+          n: ['c_invoke', 'c_exec', 'c_hist'], e: ['e_obs'],
+          st: { h: [['assistant', 'call_7 → invoke_skill("inspect-log")'], ['tool', 'call_7: полный текст навыка', 1]], p: 1, s: 1, f: false } },
+        { t: 'Дальше модель действует по навыку',
+          what: 'system (кратко) + история с полным текстом',
+          route: 'build_prompt() → Qwen',
+          text: 'Следующий запрос содержит полный текст навыка в активной истории, а `system` остаётся кратким. В настоящем запуске именно так модель узнаёт протокол подготовки `patch.txt`: он не встроен в исходный запрос.',
+          ex: null,
+          n: ['c_sys', 'c_task', 'c_hist', 'c_build', 'c_query', 'n_qwen'], e: ['e_sys_build', 'e_task_build', 'e_hist_build', 'e_build_query', 'e_req'],
+          st: { h: [['assistant', 'call_7 → invoke_skill("inspect-log")'], ['tool', 'call_7: полный текст навыка']], p: 2, s: 1, f: false } }
+      ]
+    },
+    {
+      name: 'В. Завершение и патч',
+      premise: 'Прошло k шагов: агент воспроизвёл несоответствие, узко исправил и проверил его, а по протоколу навыка создал patch.txt. Конкретное исправление здесь намеренно не показано.',
+      steps: [
+        { t: 'patch.txt создаётся внутри контейнера',
+          what: 'патч — текстовое описание изменений файлов',
+          route: 'execute → Environment → подоболочка → /testbed → patch.txt',
+          text: 'Все изменения и сам `patch.txt` существуют только в контейнере. Windows пока ничего о них не знает.',
+          ex: null,
+          n: ['c_exec', 'n_env', 'l_shell', 'l_testbed', 'l_patch'], e: ['e_exec_env', 'e_env_sh', 'e_sh_tb', 'e_tb_patch'],
+          st: { h: [['more', '… пары assistant/tool предыдущих шагов …']], p: 'k', s: 'k', f: false } },
+        { t: 'Один ответ — два вызова',
+          what: 'assistant с вызовами A и B',
+          route: 'Qwen → query_language_model()',
+          text: 'Модель вызывает `send_message` и в том же ответе ещё одну команду. Порядок вызовов важен.',
+          ex: 'assistant\n  tool_calls:\n    A: send_message({"summary": "Исправление готово, patch.txt создан"})\n    B: execute({"command": "…"})',
+          n: ['c_build', 'c_query', 'n_qwen'], e: ['e_build_query', 'e_req', 'e_resp'],
+          st: { h: [['more', '… пары assistant/tool предыдущих шагов …']], p: 'k+1', s: 'k+1', f: false } },
+        { t: 'Список уходит распределителю',
+          what: 'assistant → история; [A, B] → execute_tool_calls()',
+          route: 'run() → активная история и CodeAgent',
+          text: '`assistant` сохраняется целиком, затем весь список из двух вызовов передаётся распределителю.',
+          ex: null,
+          n: ['c_proc', 'c_hist', 'c_run', 'c_exec'], e: ['e_query_proc', 'e_proc_hist', 'e_calls'],
+          st: { h: [['more', '…'], ['assistant', 'A → send_message, B → execute', 1]], p: 'k+1', s: 'k+1', f: false } },
+        { t: 'A: send_message завершает задачу',
+          what: 'строковый summary',
+          route: 'execute_tool_calls() → send_message → finished',
+          text: '`send_message` принимает ровно строковый `summary`, устанавливает `finished=True` и возвращает подтверждение `tool(A)`.\nВажно: `send_message` не создаёт патч и не доказывает, что он есть. Это только заявление модели.',
+          ex: 'tool(A, "завершение принято")',
+          n: ['c_exec', 'c_send', 'c_fin'], e: ['e_exec_send'],
+          st: { h: [['more', '…'], ['assistant', 'A → send_message, B → execute']], p: 'k+1', s: 'k+1', f: true } },
+        { t: 'B: вызов после завершения отклоняется',
+          what: 'наблюдение об отклонении',
+          route: 'внутри execute_tool_calls(); в контейнер ничего не уходит',
+          text: 'После завершения среду менять нельзя, поэтому команда B не уходит в `Environment`. Но B всё равно получает собственное наблюдение: у каждого вызова должен быть связанный ответ `tool`.',
+          ex: 'tool(B, "вызов отклонён: агент уже завершён")',
+          n: ['c_exec', 'c_fin'], e: [],
+          st: { h: [['more', '…'], ['assistant', 'A → send_message, B → execute']], p: 'k+1', s: 'k+1', f: true } },
+        { t: 'Наблюдения в историю и выход из цикла',
+          what: 'tool(A), tool(B)',
+          route: 'execute_tool_calls() → run() → активная история',
+          text: '`run()` добавляет оба наблюдения в порядке вызовов, читает `finished=True` и завершает цикл без нового обращения к модели.',
+          ex: null,
+          n: ['c_exec', 'c_run', 'c_hist', 'c_fin'], e: ['e_obs'],
+          st: { h: [['more', '…'], ['assistant', 'A → send_message, B → execute'], ['tool', 'A: завершение принято', 1], ['tool', 'B: отклонён, агент завершён', 1]], p: 'k+1', s: 'k+1', f: true } },
+        { t: 'finally сохраняет траекторию',
+          what: 'снимки запросов, ответы, сведения о сжатиях',
+          route: 'finally → artifacts/…-trajectory.json',
+          text: 'Предоставленный неизменяемый блок `finally` записывает траекторию в Windows. Он выполняется и при успехе, и при ошибке.',
+          ex: 'artifacts/part1-qwen-run-01-trajectory.json',
+          n: ['c_final', 'c_log', 'n_art'], e: ['e_final_art'],
+          st: { h: [['more', '…'], ['assistant', 'A → send_message, B → execute'], ['tool', 'A: завершение принято'], ['tool', 'B: отклонён, агент завершён']], p: 'k+1', s: 'k+1', f: true } },
+        { t: 'Патч переносится в Windows',
+          what: 'содержимое /testbed/patch.txt',
+          route: 'контейнер → командный интерфейс → artifacts/…patch',
+          text: 'Командный интерфейс читает `patch.txt`, пока контейнер ещё существует, и записывает его под указанным именем.\nПустой или отсутствующий `patch.txt` — точка остановки, даже если модель вызвала `send_message`.',
+          ex: 'artifacts/part1-qwen-run-01.patch',
+          n: ['n_cli', 'l_patch', 'n_art'], e: ['e_patch_art'],
+          st: { h: [['more', '…'], ['assistant', 'A → send_message, B → execute'], ['tool', 'A: завершение принято'], ['tool', 'B: отклонён, агент завершён']], p: 'k+1', s: 'k+1', f: true } },
+        { t: 'Контейнер удаляется',
+          what: 'команда остановки',
+          route: 'владелец среды → Environment → удаление контейнера',
+          text: 'Среду закрывает её владелец: `finally` вызывает `stop()`, если каркас владеет средой; при запуске через командный интерфейс контейнер закрывает он сам, уже после чтения `patch.txt`. Штатный путь удаляет контейнер немедленно.\nПри аварийном обрыве процесса страхует `--rm`: удаление после `deployment_timeout`, если Docker доступен.',
+          ex: null,
+          n: ['c_final', 'n_cli', 'n_env', 'l_rm'], e: ['e_env_rm'],
+          st: { h: [['more', '…'], ['assistant', 'A → send_message, B → execute'], ['tool', 'A: завершение принято'], ['tool', 'B: отклонён, агент завершён']], p: 'k+1', s: 'k+1', f: true } },
+        { t: 'Независимая проверка пользователем',
+          what: 'доказательства, а не слова модели',
+          route: 'пользователь → artifacts/ и свежий контейнер оценки',
+          text: 'Ответ модели «готово» — не доказательство. Пользователь проверяет:\n- патч непустой, траектория разбирается и согласуется с патчем;\n- контейнер задания удалён;\n- патч отдельно применяется к свежему стенду в новом контейнере, где проходят целевая и регрессионные проверки.',
+          ex: null,
+          n: ['n_user', 'n_art'], e: [],
+          st: { h: [['more', '…'], ['assistant', 'A → send_message, B → execute'], ['tool', 'A: завершение принято'], ['tool', 'B: отклонён, агент завершён']], p: 'k+1', s: 'k+1', f: true } }
+      ]
+    },
+    {
+      name: 'Г. Отклонения и ошибки',
+      premise: 'Что происходит, когда модель ошибается или цикл упирается в предел. Главное различие: исправимая ошибка становится наблюдением, а остановка прерывает запуск, но не отменяет finally.',
+      steps: [
+        { t: 'Повреждённый JSON в arguments',
+          what: 'строка-наблюдение об ошибке',
+          route: 'run() → execute_tool_calls() → tool → история',
+          text: 'Каркас не чинит JSON и не угадывает аргументы. Ошибка становится строковым наблюдением, связанным с исходным `tool_call_id`: модель увидит его и сможет исправиться на следующем шаге. `Environment` не вызывается.',
+          ex: 'assistant: call_bad → execute, arguments = "{\\"command\\": ls"\n\n{\n  "role": "tool",\n  "tool_call_id": "call_bad",\n  "content": "Ошибка аргументов: не удалось разобрать JSON."\n}\n\nТочный текст реализации может отличаться.',
+          n: ['c_run', 'c_exec', 'c_hist'], e: ['e_calls', 'e_obs'],
+          st: { h: [['assistant', 'call_bad → execute(повреждённый JSON)'], ['tool', 'call_bad: ошибка аргументов', 1]], p: 1, s: 1, f: false } },
+        { t: 'Другие исправимые ошибки',
+          what: 'строка-наблюдение об ошибке',
+          route: 'внутри execute_tool_calls()',
+          text: 'Так же, наблюдением, обрабатываются:\n- JSON-массив, строка, число или `null` вместо объекта;\n- отсутствующий обязательный аргумент или лишний аргумент;\n- неверный тип поля;\n- неизвестное имя инструмента;\n- попытка действия после `finished=True`.\nПроизвольный метод по имени из ответа модели не вызывается.',
+          ex: null,
+          n: ['c_exec', 'c_tools'], e: [],
+          st: { h: [['assistant', 'call_bad → execute(повреждённый JSON)'], ['tool', 'call_bad: ошибка аргументов']], p: 1, s: 1, f: false } },
+        { t: 'Плохой вызов не мешает соседнему',
+          what: 'два независимых наблюдения',
+          route: 'A: ошибка → tool(A); B: контейнер → tool(B)',
+          text: 'В одном ответе вызов A повреждён, а B корректен. A получает наблюдение об ошибке, B исполняется в контейнере и получает свой результат. Поэтому нельзя оборачивать весь список одной общей обработкой ошибок.',
+          ex: 'assistant(tool_calls=[A: повреждён, B: execute("ls")])\ntool(A, "Ошибка аргументов: …")\ntool(B, "<output>…</output><returncode>0</returncode>")',
+          n: ['c_exec', 'n_env', 'l_shell', 'c_hist'], e: ['e_calls', 'e_exec_env', 'e_env_sh', 'e_sh_env', 'e_env_exec', 'e_obs'],
+          st: { h: [['assistant', 'A → повреждён, B → execute("ls")'], ['tool', 'A: ошибка аргументов', 1], ['tool', 'B: вывод, returncode 0', 1]], p: 1, s: 1, f: false } },
+        { t: 'Ненулевой код выхода — тоже наблюдение',
+          what: 'returncode = 1',
+          route: 'подоболочка → Environment → format_tool_output() → tool',
+          text: 'Команда выполнилась, но проверка упала. Для каркаса это не сбой: на этапе воспроизведения красная проверка как раз и есть нужное свидетельство дефекта.',
+          ex: '<exception_info></exception_info>\n<output>проверка обнаружила несоответствие</output>\n<returncode>1</returncode>',
+          n: ['l_shell', 'n_env', 'c_fmt', 'c_exec', 'c_hist'], e: ['e_sh_env', 'e_env_exec', 'e_exec_fmt', 'e_obs'],
+          st: { h: [['more', '…'], ['assistant', 'call_3 → execute(проверка)'], ['tool', 'call_3: returncode 1', 1]], p: 3, s: 3, f: false } },
+        { t: 'Ответ без tool_calls',
+          what: 'текст assistant и короткое user-указание',
+          route: 'Qwen → run() → активная история',
+          text: '`run()` сохраняет ответ целиком и добавляет короткое предметно-независимое сообщение `user` с просьбой продолжить допустимым действием. Вызов за модель не придумывается.\n`steps_taken` вырос на 1 за сам ответ, но не за добавленную реплику. Текст не завершает задачу.',
+          ex: 'assistant: "Кажется, я понял, в чём дело."   (без tool_calls)\nuser:      [короткая предметно-независимая просьба\n            продолжить допустимым действием]',
+          n: ['n_qwen', 'c_query', 'c_run', 'c_hist', 'c_steps'], e: ['e_resp', 'e_proc_hist'],
+          st: { h: [['more', '…'], ['assistant', 'только текст, без tool_calls', 1], ['user', 'короткое указание продолжить', 1]], p: 4, s: 4, f: false } },
+        { t: 'Предел шагов',
+          what: 'ничего не отправляется',
+          route: 'run() → StepLimitError',
+          text: 'При `steps_taken >= step_limit` цикл не обращается к API и поднимает `StepLimitError`.\n- `step_limit=0` — ни одного запроса;\n- N-й ответ исполняется полностью, со всеми вызовами;\n- запрос N+1 невозможен.',
+          ex: 'step_limit = 3\nзапрос 1 → исполнен\nзапрос 2 → исполнен\nзапрос 3 → исполнен полностью, со всеми вызовами\nзапрос 4 → StepLimitError до обращения к API',
+          n: ['c_run', 'c_steps'], e: [],
+          st: { h: [['more', '… три законченных шага …']], p: 3, s: 3, f: false } },
+        { t: 'Ошибка не отменяет уборку',
+          what: 'траектория и команда остановки',
+          route: 'finally → artifacts/; среда → удаление контейнера',
+          text: '`StepLimitError`, сбой API или ошибка обработчика прерывают `run()`, но `finally` всё равно сохраняет траекторию и освобождает среду. При аварийном обрыве процесса страхует `--rm`.',
+          ex: null,
+          n: ['c_final', 'n_art', 'n_env', 'l_rm'], e: ['e_final_art', 'e_env_rm'],
+          st: { h: [['more', '… три законченных шага …']], p: 3, s: 3, f: false } },
+        { t: 'Итог: наблюдение или остановка',
+          what: 'правило различения',
+          route: '—',
+          text: 'Исправимые ошибки модели (аргументы, имена, вызов после завершения, ненулевой код) становятся наблюдениями, и цикл продолжается.\nОстанавливают запуск: `ValueError` при загрузке навыков, `StepLimitError`, сбой API, мёртвый контейнер. Нарушение границы — исполнение команды модели в Windows — недопустимо в любом случае.',
+          ex: null,
+          n: ['c_exec', 'c_final', 'n_forbid'], bad: ['n_forbid'], e: [],
+          st: { h: [['more', '…']], p: '—', s: '—', f: false } }
+      ]
+    }
+  ];
+
+  /* ---------- Проигрыватель ---------- */
+
+  var tabs = document.getElementById('tabs');
+  var cur = { s: 0, i: 0 };
+  var prevState = null;
+
+  SCENARIOS.forEach(function (sc, idx) {
+    var b = document.createElement('button');
+    b.textContent = sc.name;
+    b.addEventListener('click', function () { cur = { s: idx, i: 0 }; prevState = null; render(); });
+    tabs.appendChild(b);
+  });
+
+  function renderText(s) {
+    var out = '', inList = false;
+    s.split('\n').forEach(function (line) {
+      if (line.indexOf('- ') === 0) {
+        if (!inList) { out += '<ul>'; inList = true; }
+        out += '<li>' + rich(line.slice(2)) + '</li>';
+      } else {
+        if (inList) { out += '</ul>'; inList = false; }
+        out += '<p>' + rich(line) + '</p>';
+      }
+    });
+    if (inList) out += '</ul>';
+    return out;
+  }
+
+  function counter(labelHtml, val, old) {
+    var changed = old !== undefined && old !== val;
+    return '<span class="counter' + (changed ? ' changed' : '') + '">' + labelHtml + ' = <b>' + esc(String(val)) + '</b></span>';
+  }
+
+  function highlight(step) {
+    svg.classList.add('focus');
+    Object.keys(nodeEls).forEach(function (id) {
+      nodeEls[id].classList.toggle('on', step.n.indexOf(id) >= 0);
+      nodeEls[id].classList.toggle('bad', (step.bad || []).indexOf(id) >= 0);
+    });
+    Object.keys(edgeEls).forEach(function (id) {
+      var on = step.e.indexOf(id) >= 0;
+      edgeEls[id].classList.toggle('on', on);
+      if (labelEls[id]) labelEls[id].classList.toggle('on', on);
+    });
+  }
+
+  function clearHighlight() {
+    svg.classList.remove('focus');
+    Object.keys(nodeEls).forEach(function (id) { nodeEls[id].classList.remove('on', 'bad'); });
+    Object.keys(edgeEls).forEach(function (id) {
+      edgeEls[id].classList.remove('on');
+      if (labelEls[id]) labelEls[id].classList.remove('on');
+    });
+  }
+
+  function render() {
+    var sc = SCENARIOS[cur.s], step = sc.steps[cur.i];
+    Array.prototype.forEach.call(tabs.children, function (b, i) { b.classList.toggle('active', i === cur.s); });
+    document.getElementById('premise').textContent = sc.premise;
+    document.getElementById('stepNo').textContent = 'Шаг ' + (cur.i + 1) + ' из ' + sc.steps.length;
+    document.getElementById('stepTitle').textContent = step.t;
+    document.getElementById('stepWhat').textContent = step.what;
+    document.getElementById('stepRoute').textContent = step.route;
+    document.getElementById('stepText').innerHTML = renderText(step.text);
+    var exWrap = document.getElementById('stepExWrap');
+    if (step.ex) {
+      exWrap.style.display = '';
+      document.getElementById('stepEx').textContent = step.ex;
+    } else {
+      exWrap.style.display = 'none';
+    }
+    var st = step.st, ps = prevState || {};
+    document.getElementById('counters').innerHTML =
+      counter('снимков в <code>api_prompts</code>', st.p, ps.p) +
+      counter('<code>steps_taken</code>', st.s, ps.s) +
+      counter('<code>finished</code>', st.f ? 'True' : 'False', ps.f === undefined ? undefined : (ps.f ? 'True' : 'False'));
+    var hist = document.getElementById('hist');
+    if (!st.h.length) {
+      hist.innerHTML = '<div class="msg more">активная история пуста</div>';
+    } else {
+      hist.innerHTML = st.h.map(function (m) {
+        var role = m[0];
+        if (role === 'more') return '<div class="msg more">' + esc(m[1]) + '</div>';
+        return '<div class="msg ' + role + (m[2] ? ' new' : '') + '"><span class="r">' + role + '</span>' + esc(m[1]) + '</div>';
+      }).join('');
+    }
+    document.getElementById('prev').disabled = cur.i === 0;
+    document.getElementById('next').textContent = cur.i === sc.steps.length - 1 ? 'Следующий сценарий →' : 'Вперёд →';
+    highlight(step);
+    prevState = st;
+  }
+
+  function next() {
+    var sc = SCENARIOS[cur.s];
+    if (cur.i < sc.steps.length - 1) cur.i++;
+    else { cur.s = (cur.s + 1) % SCENARIOS.length; cur.i = 0; prevState = null; }
+    render();
+  }
+  function prev() {
+    if (cur.i > 0) { cur.i--; prevState = null; render(); }
+  }
+
+  document.getElementById('next').addEventListener('click', next);
+  document.getElementById('prev').addEventListener('click', prev);
+  document.getElementById('all').addEventListener('click', clearHighlight);
+  document.addEventListener('keydown', function (ev) {
+    if (ev.target && /INPUT|TEXTAREA|SELECT/.test(ev.target.tagName)) return;
+    if (ev.key === 'ArrowRight') { ev.preventDefault(); next(); }
+    if (ev.key === 'ArrowLeft') { ev.preventDefault(); prev(); }
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
